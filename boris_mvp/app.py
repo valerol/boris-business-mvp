@@ -18,6 +18,7 @@ from boris_mvp.sima import SIMAOutput, analyze_reality
 
 
 STATE_FILE = "state.json"
+TASK_STORE: dict[str, "TaskState"] = {}
 
 
 class TaskRequest(BaseModel):
@@ -85,7 +86,17 @@ def state_path(workspace: Path) -> Path:
     return workspace.resolve() / STATE_FILE
 
 
+def is_vercel_runtime() -> bool:
+    import os
+
+    return bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+
+
 def load_state(workspace: Path) -> TaskState:
+    if is_vercel_runtime():
+        if TASK_STORE:
+            return next(reversed(TASK_STORE.values()))
+        return TaskState()
     path = state_path(workspace)
     if not path.exists():
         return TaskState()
@@ -98,8 +109,21 @@ def load_state(workspace: Path) -> TaskState:
 
 
 def save_state(workspace: Path, state: TaskState) -> None:
+    TASK_STORE[state.task_id] = state
+    if is_vercel_runtime():
+        return
     workspace.resolve().mkdir(parents=True, exist_ok=True)
     state_path(workspace).write_text(state.model_dump_json(indent=2), encoding="utf-8")
+
+
+def load_task(workspace: Path, task_id: str) -> TaskState:
+    if task_id in TASK_STORE:
+        return TASK_STORE[task_id]
+    state = load_state(workspace)
+    if state.task_id == task_id:
+        TASK_STORE[task_id] = state
+        return state
+    raise HTTPException(status_code=404, detail="Task not found")
 
 
 def run_pipeline(prompt: str, workspace: Path, project_context: dict | None = None, task_id: str | None = None) -> TaskState:
@@ -274,15 +298,13 @@ def create_app(workspace: Path | None = None) -> FastAPI:
 
     @app.post("/api/tasks/{task_id}/plan")
     def plan_task(task_id: str) -> dict:
-        current = load_state(app.state.workspace)
-        _ensure_task(task_id, current)
+        current = load_task(app.state.workspace, task_id)
         state = run_pipeline(current.prompt, app.state.workspace, current.project_context, task_id=current.task_id)
         return state.model_dump(mode="json")
 
     @app.post("/api/tasks/{task_id}/patch")
     def patch_task(task_id: str) -> dict:
-        current = load_state(app.state.workspace)
-        _ensure_task(task_id, current)
+        current = load_task(app.state.workspace, task_id)
         if current.status not in {"done", "blocked"}:
             current = run_pipeline(current.prompt, app.state.workspace, current.project_context, task_id=current.task_id)
         return {
@@ -293,8 +315,7 @@ def create_app(workspace: Path | None = None) -> FastAPI:
 
     @app.get("/api/tasks/{task_id}")
     def get_task(task_id: str) -> dict:
-        current = load_state(app.state.workspace)
-        _ensure_task(task_id, current)
+        current = load_task(app.state.workspace, task_id)
         return current.model_dump(mode="json")
 
     @app.get("/api/health")
@@ -303,6 +324,7 @@ def create_app(workspace: Path | None = None) -> FastAPI:
             "status": "ok",
             "model": model_name(),
             "openai_configured": has_openai_key(),
+            "state_persistence": "memory_ephemeral" if is_vercel_runtime() else "local_file",
         }
 
     @app.post("/task")
@@ -331,11 +353,6 @@ def create_app(workspace: Path | None = None) -> FastAPI:
         return state.model_dump(mode="json")
 
     return app
-
-
-def _ensure_task(task_id: str, state: TaskState) -> None:
-    if state.task_id != task_id:
-        raise HTTPException(status_code=404, detail="Task not found")
 
 
 app = create_app()

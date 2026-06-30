@@ -12,7 +12,7 @@ The desktop app must never contain or use the OpenAI API key.
 Install the Python package once:
 
 ```bash
-cd /Users/lera/web/boris_business
+cd /Users/lera/web/boris-business-mvp
 python3 -m pip install -e .
 ```
 
@@ -48,7 +48,7 @@ OPENAI_MODEL=gpt-4o-mini
 Install desktop dependencies:
 
 ```bash
-cd /Users/lera/web/boris_business/desktop
+cd /Users/lera/web/boris-business-mvp/desktop
 npm install
 ```
 
@@ -85,6 +85,59 @@ npm run build:mac
 ```
 
 This uses Electron and electron-builder. The current build target is a MacOS directory build for local MVP packaging.
+
+
+## Deploy server to Vercel
+
+Only the **server core** is deployed to Vercel. The Electron desktop app stays local and talks to the deployed API through `BORIS_SERVER_URL`.
+
+Vercel files:
+
+```text
+api/index.py
+vercel.json
+requirements.txt
+```
+
+Deploy steps:
+
+1. Create a Vercel project from this repository.
+2. Set environment variables in Vercel project settings:
+
+```bash
+OPENAI_API_KEY=your_server_side_key
+OPENAI_MODEL=gpt-4o-mini
+```
+
+3. Deploy the project.
+4. Verify the deployed server:
+
+```bash
+curl https://your-project.vercel.app/api/health
+```
+
+Expected response shape:
+
+```json
+{
+  "status": "ok",
+  "model": "gpt-4o-mini",
+  "openai_configured": true,
+  "state_persistence": "memory_ephemeral"
+}
+```
+
+The API key is never returned by the server.
+
+Vercel MVP state note: task state uses in-memory serverless storage on Vercel. It is intentionally non-persistent and may reset between cold starts or function instances. A database should be added later for production persistence.
+
+Desktop configuration after deploy:
+
+```text
+BORIS_SERVER_URL=https://your-project.vercel.app
+```
+
+The desktop app continues to scan files locally and sends only selected `project_context` snippets to the deployed server.
 
 ## 6. Security Model
 
