@@ -8,6 +8,16 @@ BORIS Business MVP is split into two runtime surfaces:
 The desktop app must never contain or use the OpenAI API key.
 
 
+
+## Project Documentation
+
+The documents in `docs/` are the canonical source of truth for project architecture, product requirements, security boundaries, and development rules.
+
+- [Architecture Contract](docs/ARCHITECTURE.md)
+- [Product Requirements](docs/PRD.md)
+- [Security Model](docs/SECURITY.md)
+- [Development Rules](docs/DEVELOPMENT.md)
+
 ## Quick desktop start
 
 Run the local MacOS desktop app:
