@@ -29,12 +29,17 @@ def apply_constraints(snapshot: SIMAOutput, transition_report: BOISTransitionRep
 
     if not transition_report.is_valid:
         report.risk_level = "high"
-        report.stop_conditions.append("BOIS blocked the pre-LLM knowledge transition.")
+        if not snapshot.clear_intent or snapshot.missing_intent_fields:
+            report.stop_conditions.append("STOP-MISSING-INTENT")
+        if snapshot.referent_unresolved:
+            report.stop_conditions.append("STOP-UNRESOLVED-REFERENT")
+        if not report.stop_conditions:
+            report.stop_conditions.append("BOIS blocked the pre-LLM knowledge transition.")
         return report
 
     if "User intent is empty." in snapshot.unknowns:
         report.risk_level = "high"
-        report.stop_conditions.append("Missing user intent.")
+        report.stop_conditions.append("STOP-MISSING-INTENT")
         return report
 
     high_risk_terms = ("delete", "remove", "overwrite", "rm ", "sudo", "format", "wipe")

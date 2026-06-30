@@ -29,6 +29,18 @@ def validate_pre_llm(snapshot: SIMAOutput) -> BOISTransitionReport:
         report.reasoning.append("Cannot move from no user intent to action.")
         return report
 
+    if not snapshot.clear_intent:
+        report.blocked_transitions.append("K1 -> K2")
+        report.reasoning.append("SIMA marked clear_intent=false; LLM/action transition is blocked.")
+    if snapshot.missing_intent_fields:
+        report.blocked_transitions.append("K1 -> K2")
+        report.reasoning.append("Missing intent fields: " + ", ".join(snapshot.missing_intent_fields))
+    if snapshot.referent_unresolved:
+        report.blocked_transitions.append("K1 -> K2")
+        report.reasoning.append("Prompt contains unresolved referent or context-dependent target.")
+    if report.blocked_transitions:
+        return report
+
     report.allowed_transitions.extend(["K0 -> K1", "K1 -> K2"])
     report.reasoning.append("SIMA produced observable facts and active prompt context.")
     report.is_valid = True
