@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BORIS Business MVP Desktop</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>BORIS Business MVP</h1>
+        <p>MacOS local file agent connected to BORIS server core</p>
+      </div>
+      <div id="status" class="status">idle</div>
+    </header>
+
+    <section class="settings">
+      <label for="serverUrl">BORIS_SERVER_URL</label>
+      <div class="row">
+        <input id="serverUrl" />
+        <button id="saveServer">Save</button>
+        <button id="health">Health</button>
+      </div>
+      <div id="healthOutput" class="muted"></div>
+    </section>
+
+    <section>
+      <label>Project folder</label>
+      <div class="row">
+        <button id="selectProject">Select Project Folder</button>
+        <button id="scanProject">Scan Local Files</button>
+      </div>
+      <div id="projectPath" class="path">No folder selected</div>
+      <pre id="contextOutput">No project context yet.</pre>
+    </section>
+
+    <section>
+      <label for="prompt">Prompt</label>
+      <textarea id="prompt" placeholder="Ask BORIS to inspect, explain, plan, or propose a patch"></textarea>
+      <div class="row">
+        <button id="run" class="primary">Run</button>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section>
+        <label>Layer outputs</label>
+        <pre id="trace">No task has run yet.</pre>
+      </section>
+      <section>
+        <label>Result</label>
+        <pre id="result">No result yet.</pre>
+        <label>Proposed patches</label>
+        <pre id="patches">No patches yet.</pre>
+        <button id="applyPatch" class="primary" disabled>Apply Patch</button>
+      </section>
+    </div>
+
+    <section>
+      <label>Local execution log</label>
+      <div id="logs" class="logs"></div>
+    </section>
+  </main>
+  <script src="./renderer.js"></script>
+</body>
+</html>

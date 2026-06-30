@@ -1,0 +1,11 @@
+{
+  "name": "boris-business-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BORIS Business MVP desktop launcher.",
+  "scripts": {
+    "desktop": "npm --prefix desktop run dev",
+    "desktop:install": "npm --prefix desktop install",
+    "desktop:build:mac": "npm --prefix desktop run build:mac"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "boris-business-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron desktop shell for BORIS Business MVP.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "build:mac": "electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.boris.business.mvp",
+    "productName": "BORIS Business MVP",
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": "dir"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "package.json"
+    ]
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  }
+}
