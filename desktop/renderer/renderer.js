@@ -143,6 +143,7 @@ function renderTask(task) {
     bois_report: task.bois_report || task.bois_transition_report,
     boris_report: task.boris_report || task.boris_constraints_report,
     llm_response: task.llm_response,
+    action_plan: task.action_plan,
     execution_trace: task.execution_trace,
     stop_events: task.stop_events
   }, null, 2);

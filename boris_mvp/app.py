@@ -47,6 +47,13 @@ class ProposedPatch(BaseModel):
     requires_approval: bool = True
 
 
+class ActionPlan(BaseModel):
+    action_type: str = "answer_only"
+    target_file: str | None = None
+    reasoning: list[str] = Field(default_factory=list)
+    requires_patch: bool = False
+
+
 class TaskState(BaseModel):
     task_id: str = Field(default_factory=lambda: str(uuid4()))
     prompt: str = ""
@@ -61,6 +68,7 @@ class TaskState(BaseModel):
     boris_report: BORISConstraintsReport | None = None
     context_package: dict = Field(default_factory=dict)
     llm_response: LLMResponse | None = None
+    action_plan: ActionPlan = Field(default_factory=ActionPlan)
     proposed_patches: list[ProposedPatch] = Field(default_factory=list)
     execution_trace: ExecutionTrace | None = None
     stop_events: list[StopEvent] = Field(default_factory=list)
@@ -193,7 +201,8 @@ def run_pipeline(prompt: str, workspace: Path, project_context: dict | None = No
         return state
 
     state.status = "execution"
-    state.proposed_patches = propose_patches(clean_prompt, state.project_context, state.llm_response)
+    state.action_plan = decide_action(clean_prompt, state.project_context, state.llm_response)
+    state.proposed_patches = propose_patches(clean_prompt, state.project_context, state.llm_response, state.action_plan)
     state.execution_trace = execute_response(
         state.llm_response,
         post_report,
@@ -232,41 +241,95 @@ def package_context(
     }
 
 
-def propose_patches(prompt: str, project_context: dict, llm_response: LLMResponse) -> list[ProposedPatch]:
+def decide_action(prompt: str, project_context: dict, llm_response: LLMResponse) -> ActionPlan:
     lower = prompt.lower()
-    if not any(word in lower for word in ("patch", "change", "edit", "add", "fix", "implement", "добавь", "измени", "почини")):
-        return []
-
+    file_tree = [str(item) for item in (project_context.get("file_tree") or [])]
     snippets = project_context.get("selected_snippets") or {}
-    if not isinstance(snippets, dict) or not snippets:
+
+    create_words = ("создай", "создать", "сохрани", "сохранить", "save", "write", "create")
+    list_words = ("список", "list", "перечень", "files", "файлов")
+    if any(word in lower for word in create_words) and any(word in lower for word in list_words) and file_tree:
+        return ActionPlan(
+            action_type="create_file",
+            target_file=_requested_output_file(lower) or "file_list.txt",
+            reasoning=["Prompt asks to create/save a file list.", "file_tree is sufficient; selected snippets are not required."],
+            requires_patch=True,
+        )
+
+    patch_words = ("patch", "change", "edit", "add", "fix", "implement", "добавь", "измени", "почини")
+    if any(word in lower for word in patch_words) and isinstance(snippets, dict) and snippets:
+        return ActionPlan(
+            action_type="modify_file",
+            target_file=next(iter(snippets)),
+            reasoning=["Prompt asks for a file change and a text snippet is available."],
+            requires_patch=True,
+        )
+
+    return ActionPlan(
+        action_type="answer_only",
+        reasoning=["No safe local file patch could be inferred from the available context."],
+        requires_patch=False,
+    )
+
+
+def propose_patches(
+    prompt: str,
+    project_context: dict,
+    llm_response: LLMResponse,
+    action_plan: ActionPlan,
+) -> list[ProposedPatch]:
+    if not action_plan.requires_patch:
         return []
 
-    file_path = next(iter(snippets))
-    original = str(snippets[file_path])
-    addition = (
-        "\n\n"
-        "# BORIS proposed change\n"
-        f"# Request: {' '.join(prompt.split())}\n"
-    )
-    updated = original.rstrip("\n") + addition + "\n"
-    diff = _unified_diff(file_path, original, updated)
-    return [
-        ProposedPatch(
-            file_path=file_path,
-            diff=diff,
-            summary=f"Proposed local-only patch for {file_path}. Review before applying.",
+    if action_plan.action_type == "create_file":
+        file_tree = [str(item) for item in (project_context.get("file_tree") or [])]
+        target = action_plan.target_file or "file_list.txt"
+        content = "\n".join(file_tree) + ("\n" if file_tree else "")
+        diff = _unified_diff(target, "", content, new_file=True)
+        return [
+            ProposedPatch(
+                file_path=target,
+                diff=diff,
+                summary=f"Create {target} with the selected project file list.",
+            )
+        ]
+
+    if action_plan.action_type == "modify_file" and action_plan.target_file:
+        snippets = project_context.get("selected_snippets") or {}
+        original = str(snippets[action_plan.target_file])
+        addition = (
+            "\n\n"
+            "# BORIS proposed change\n"
+            f"# Request: {' '.join(prompt.split())}\n"
         )
-    ]
+        updated = original.rstrip("\n") + addition + "\n"
+        diff = _unified_diff(action_plan.target_file, original, updated)
+        return [
+            ProposedPatch(
+                file_path=action_plan.target_file,
+                diff=diff,
+                summary=f"Proposed local-only patch for {action_plan.target_file}. Review before applying.",
+            )
+        ]
+
+    return []
 
 
-def _unified_diff(file_path: str, original: str, updated: str) -> str:
+def _requested_output_file(lower_prompt: str) -> str | None:
+    for candidate in ("file_list.txt", "files.txt", "список_файлов.txt"):
+        if candidate in lower_prompt:
+            return candidate
+    return None
+
+
+def _unified_diff(file_path: str, original: str, updated: str, new_file: bool = False) -> str:
     import difflib
 
     return "".join(
         difflib.unified_diff(
             original.splitlines(keepends=True),
             updated.splitlines(keepends=True),
-            fromfile=f"a/{file_path}",
+            fromfile="/dev/null" if new_file else f"a/{file_path}",
             tofile=f"b/{file_path}",
         )
     )

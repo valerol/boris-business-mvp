@@ -7,6 +7,31 @@ BORIS Business MVP is split into two runtime surfaces:
 
 The desktop app must never contain or use the OpenAI API key.
 
+
+## Quick desktop start
+
+Run the local MacOS desktop app:
+
+```bash
+cd /Users/lera/web/boris-business-mvp/desktop
+npm install
+npm run dev
+```
+
+Build the MacOS app bundle:
+
+```bash
+cd /Users/lera/web/boris-business-mvp/desktop
+npm run build:mac
+```
+
+Before using the desktop app, set `BORIS_SERVER_URL` in the app settings to either your deployed Vercel API URL or local server URL:
+
+```text
+https://your-project.vercel.app
+http://127.0.0.1:8765
+```
+
 ## 1. Run Server Locally
 
 Install the Python package once:

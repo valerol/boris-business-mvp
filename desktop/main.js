@@ -1,7 +1,6 @@
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
-const { spawnSync } = require("child_process");
 
 let selectedRoot = null;
 
@@ -143,43 +142,28 @@ function applyPatch(root, patch) {
   if (!patch || typeof patch.diff !== "string") {
     throw new Error("Patch diff is missing.");
   }
-  const targets = parsePatchTargets(patch.diff);
-  if (targets.length === 0) {
+  const filePatches = parseUnifiedDiff(patch.diff);
+  if (filePatches.length === 0) {
     throw new Error("No patch targets found.");
-  }
-  for (const target of targets) {
-    if (isIgnored(target)) {
-      throw new Error(`Refusing to patch ignored or sensitive file: ${target}`);
-    }
-    safeResolve(root, target);
-  }
-
-  const check = spawnSync("git", ["apply", "--check", "-"], {
-    cwd: root,
-    input: patch.diff,
-    encoding: "utf8"
-  });
-  if (check.status !== 0) {
-    throw new Error(check.stderr || "Patch validation failed.");
   }
 
   const backups = [];
-  for (const target of targets) {
+  const targets = [];
+  for (const filePatch of filePatches) {
+    const target = filePatch.target;
+    if (isIgnored(target)) {
+      throw new Error(`Refusing to patch ignored or sensitive file: ${target}`);
+    }
     const full = safeResolve(root, target);
+    targets.push(target);
     if (fs.existsSync(full)) {
       const backup = `${full}.boris-backup-${Date.now()}`;
       fs.copyFileSync(full, backup);
       backups.push(path.relative(root, backup));
+    } else {
+      fs.mkdirSync(path.dirname(full), { recursive: true });
     }
-  }
-
-  const applied = spawnSync("git", ["apply", "-"], {
-    cwd: root,
-    input: patch.diff,
-    encoding: "utf8"
-  });
-  if (applied.status !== 0) {
-    throw new Error(applied.stderr || "Patch apply failed.");
+    applyFilePatch(full, filePatch);
   }
 
   return {
@@ -190,14 +174,76 @@ function applyPatch(root, patch) {
   };
 }
 
-function parsePatchTargets(diff) {
-  const targets = [];
-  for (const line of diff.split(/\r?\n/)) {
-    if (!line.startsWith("+++ b/")) continue;
-    const target = line.slice("+++ b/".length).trim();
-    if (target && target !== "/dev/null") {
-      targets.push(target);
+function parseUnifiedDiff(diff) {
+  const lines = diff.split(/\r?\n/);
+  const patches = [];
+  let current = null;
+
+  for (const line of lines) {
+    if (line.startsWith("--- ")) {
+      if (current) patches.push(current);
+      current = { source: line.slice(4).trim(), target: null, hunks: [] };
+      continue;
+    }
+    if (line.startsWith("+++ ")) {
+      if (!current) throw new Error("Malformed patch: target without source.");
+      current.target = cleanDiffPath(line.slice(4).trim());
+      continue;
+    }
+    if (current && line.startsWith("@@")) {
+      current.hunks.push([]);
+      continue;
+    }
+    if (current && current.hunks.length > 0) {
+      current.hunks[current.hunks.length - 1].push(line);
     }
   }
-  return [...new Set(targets)];
+  if (current) patches.push(current);
+  return patches.filter((item) => item.target);
+}
+
+function cleanDiffPath(rawPath) {
+  if (rawPath === "/dev/null") return null;
+  if (rawPath.startsWith("b/")) return rawPath.slice(2);
+  if (rawPath.startsWith("a/")) return rawPath.slice(2);
+  return rawPath;
+}
+
+function applyFilePatch(fullPath, filePatch) {
+  const exists = fs.existsSync(fullPath);
+  const original = exists ? fs.readFileSync(fullPath, "utf8") : "";
+  const originalLines = original.length ? original.split(/\r?\n/) : [];
+  if (original.endsWith("\n")) originalLines.pop();
+
+  const output = [];
+  let originalIndex = 0;
+
+  for (const hunk of filePatch.hunks) {
+    for (const line of hunk) {
+      if (line === "\ No newline at end of file") continue;
+      const marker = line[0];
+      const value = line.slice(1);
+      if (marker === " ") {
+        if (originalLines[originalIndex] !== value) {
+          throw new Error(`Patch context mismatch in ${filePatch.target}.`);
+        }
+        output.push(value);
+        originalIndex += 1;
+      } else if (marker === "-") {
+        if (originalLines[originalIndex] !== value) {
+          throw new Error(`Patch removal mismatch in ${filePatch.target}.`);
+        }
+        originalIndex += 1;
+      } else if (marker === "+") {
+        output.push(value);
+      }
+    }
+  }
+
+  while (originalIndex < originalLines.length) {
+    output.push(originalLines[originalIndex]);
+    originalIndex += 1;
+  }
+
+  fs.writeFileSync(fullPath, output.join("\n") + "\n", "utf8");
 }
